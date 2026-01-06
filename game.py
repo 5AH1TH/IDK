@@ -14,7 +14,11 @@ FramePerSec = pygame.time.Clock()
 level = 1
 score = 0
 health = 100
+
 DAMAGE_PER_HIT = 10
+GAME= "game"
+DASHBOARD= "dashboard"
+state = GAME
 
 
 screen_width = 800
@@ -69,6 +73,24 @@ class Enemy(pygame.sprite.Sprite):
     def draw(self, surface):
         surface.blit(self.image, self.rect)
 
+class Button_Dashboard:
+    def __init__(self, x, y, w, h, text):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.text = text
+        self.font = pygame.font.SysFont(None, 36)
+
+    def draw(self, surface):
+        pygame.draw.rect(surface, (180, 180, 180), self.rect)
+        pygame.draw.rect(surface, (0, 0, 0), self.rect, 2)
+        txt = font.render(self.text, True, (0, 0, 0))
+        surface.blit(txt, (
+            self.rect.centerx - txt.get_width() // 2,
+            self.rect.centery - txt.get_height() // 2
+        ))
+    
+    def clicked(self, event):
+        return event.type == pygame.MOUSEBUTTONDOWN and self.rect.collidepoint(event.pos)
+
 def spawn_enemies(group, count):
     for _ in range(int(count)):
         group.add(Enemy())
@@ -77,56 +99,77 @@ P1 = Player()
 enemies = pygame.sprite.Group()
 spawn_enemies(enemies, level)
 
+dashboard_button = Button_Dashboard(
+    x=620,
+    y=10,
+    w=160,
+    h=40,
+    text="Dashboard"
+)
+
 while True:
     for event in pygame.event.get():
         if event.type == QUIT:
             pygame.quit()
             sys.exit()
-    P1.update()
-    enemies.update()
-    # handle collisions: remove colliding enemies and reduce player health
-    collided = pygame.sprite.spritecollide(P1, enemies, dokill=True)
-    if collided:
-        health -= DAMAGE_PER_HIT * len(collided)
-        if health < 0:
+    if state == GAME:    
+        P1.update()
+        enemies.update()
+        # handle collisions: remove colliding enemies and reduce player health
+        collided = pygame.sprite.spritecollide(P1, enemies, dokill=True)
+        if collided:
+            health -= DAMAGE_PER_HIT * len(collided)
+            if health < 0:
+                sys.exit()
+        display.fill((255, 255, 255))
+        P1.draw(display)
+        enemies.draw(display)
+
+        if dashboard_button.clicked(event):
+            state = DASHBOARD
+
+        # Level timer: increase level every 10 seconds
+        now = pygame.time.get_ticks()
+        if now - level_start_ticks >= LEVEL_UP_INTERVAL:
+            level += 1
+            level_start_ticks = now
+            # make enemies a bit faster each level
+            for e in enemies:
+                e.speed += 1
+            # spawn additional enemies so total equals current level
+            needed = level - len(enemies)
+            if needed > 0:
+                spawn_enemies(enemies, needed)
+
+        # draw level on screen
+        level_surf = font.render(f'Level: {level}', True, (0, 0, 0))
+        health_surf = font.render(f'Health: {health}', True, (0, 0, 0))
+        display.blit(level_surf, (10, 10))
+        display.blit(health_surf, (10, 50))
+
+        # draw health
+        health_surf = font.render(f'Health: {health}', True, (200, 0, 0))
+        display.blit(health_surf, (10, 40))
+
+        dashboard_button.draw(display)
+
+        # game over if health depleted
+        if health <= 0:
+            over_surf = font.render('Game Over', True, (255, 0, 0))
+            display.blit(over_surf, (screen_width//2 - over_surf.get_width()//2, screen_height//2))
+            pygame.display.update()
+            pygame.time.wait(2000)
             sys.exit()
-    display.fill((255, 255, 255))
-    P1.draw(display)
-    enemies.draw(display)
 
-    # Level timer: increase level every 10 seconds
-    now = pygame.time.get_ticks()
-    if now - level_start_ticks >= LEVEL_UP_INTERVAL:
-        level += 1
-        level_start_ticks = now
-        # make enemies a bit faster each level
-        for e in enemies:
-            e.speed += 1
-        # spawn additional enemies so total equals current level
-        needed = level - len(enemies)
-        if needed > 0:
-            spawn_enemies(enemies, needed)
+        if level % 5 == 1 and level > 1:
+            sys.exit()
 
-    # draw level on screen
-    level_surf = font.render(f'Level: {level}', True, (0, 0, 0))
-    health_surf = font.render(f'Health: {health}', True, (0, 0, 0))
-    display.blit(level_surf, (10, 10))
-    display.blit(health_surf, (10, 50))
+    elif state == DASHBOARD:
+        display.fill((220, 220, 220))
+        title = font.render("UPGRADE DASHBOARD", True, (0,0,0))
+        display.blit(title, (screen_width//2 - title.get_width()//2, 150))
 
-    # draw health
-    health_surf = font.render(f'Health: {health}', True, (200, 0, 0))
-    display.blit(health_surf, (10, 40))
-
-    # game over if health depleted
-    if health <= 0:
-        over_surf = font.render('Game Over', True, (255, 0, 0))
-        display.blit(over_surf, (screen_width//2 - over_surf.get_width()//2, screen_height//2))
-        pygame.display.update()
-        pygame.time.wait(2000)
-        sys.exit()
-
-    if level % 5 == 1 and level > 1:
-        sys.exit()
+        display.blit(font.render(f"Upgrade Points: {score}", True, (0,0,0)), (10,10))
 
     pygame.display.update()
     FramePerSec.tick(FPS)
