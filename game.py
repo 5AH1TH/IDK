@@ -12,8 +12,9 @@ FPS = 60
 FramePerSec = pygame.time.Clock()
 
 level = 1
-score = 0
+score = 100
 health = 100
+speed = 10
 
 DAMAGE_PER_HIT = 10
 GAME= "game"
@@ -43,9 +44,9 @@ class Player(pygame.sprite.Sprite):
     def update(self):
         pressed_keys = pygame.key.get_pressed()
         if (pressed_keys[K_LEFT] or pressed_keys[K_a]) and self.rect.left > 0:
-            self.rect.move_ip(-10, 0)
+            self.rect.move_ip(-speed, 0)
         if (pressed_keys[K_RIGHT] or pressed_keys[K_d]) and self.rect.right < screen_width:
-            self.rect.move_ip(10, 0)
+            self.rect.move_ip(speed, 0)
         #if pressed_keys[K_UP] and self.rect.top > 0:
           #  self.rect.move_ip(0, -5)
         #if pressed_keys[K_DOWN] and self.rect.bottom < screen_height:
@@ -95,6 +96,74 @@ def spawn_enemies(group, count):
     for _ in range(int(count)):
         group.add(Enemy())
 
+class Speed_Upgrade:
+    def __init__(self, x, y, w, h, text, cost):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.text = text
+        self.cost = cost
+        self.font = pygame.font.SysFont(None, 36)
+
+    def draw(self, surface):
+        pygame.draw.rect(surface, (180, 180, 180), self.rect)
+        pygame.draw.rect(surface, (0, 0, 0), self.rect, 2)
+        txt = font.render(self.text, True, (0, 0, 0))
+        surface.blit(txt, (
+            self.rect.centerx - txt.get_width() // 2,
+            self.rect.centery - txt.get_height() // 2
+        ))
+    
+    def clicked(self, event):
+        global speed, score
+        if event.type == pygame.MOUSEBUTTONDOWN and self.rect.collidepoint(event.pos):
+            if score >= self.cost:
+                speed += 5
+                score -= self.cost
+                return True
+        return False
+
+class Damage_Upgrade:
+    def __init__(self, x, y, w, h, text, cost):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.text = text
+        self.cost = cost
+        self.font = pygame.font.SysFont(None, 36)
+
+    def draw(self, surface):
+        pygame.draw.rect(surface, (180, 180, 180), self.rect)
+        pygame.draw.rect(surface, (0, 0, 0), self.rect, 2)
+        txt = font.render(self.text, True, (0, 0, 0))
+        surface.blit(txt, (
+            self.rect.centerx - txt.get_width() // 2,
+            self.rect.centery - txt.get_height() // 2
+        ))
+    
+    def clicked(self, event):
+        global DAMAGE_PER_HIT, score
+        if event.type == pygame.MOUSEBUTTONDOWN and self.rect.collidepoint(event.pos):
+            if score >= self.cost:
+                DAMAGE_PER_HIT += 5
+                score -= self.cost
+                return True
+        return False
+    
+class Button_Game:
+    def __init__(self, x, y, w, h, text):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.text = text
+        self.font = pygame.font.SysFont(None, 36)
+
+    def draw(self, surface):
+        pygame.draw.rect(surface, (180, 180, 180), self.rect)
+        pygame.draw.rect(surface, (0, 0, 0), self.rect, 2)
+        txt = font.render(self.text, True, (0, 0, 0))
+        surface.blit(txt, (
+            self.rect.centerx - txt.get_width() // 2,
+            self.rect.centery - txt.get_height() // 2
+        ))
+    
+    def clicked(self, event):
+        return event.type == pygame.MOUSEBUTTONDOWN and self.rect.collidepoint(event.pos)
+
 P1 = Player()
 enemies = pygame.sprite.Group()
 spawn_enemies(enemies, level)
@@ -107,11 +176,51 @@ dashboard_button = Button_Dashboard(
     text="Dashboard"
 )
 
+game_button = Button_Game(
+    x=620,
+    y=10,
+    w=160,
+    h=40,
+    text="Back to Game"
+)
+
+upgrade_speed_button = Speed_Upgrade(
+    x=50,
+    y=300,
+    w=350,
+    h=50,
+    text="Upgrade Speed (10 points)",
+    cost=10
+)
+
+upgrade_damage_button = Damage_Upgrade(
+    x=425,
+    y=300,
+    w=350,
+    h=50,
+    text="Upgrade Damage (10 points)",
+    cost=10
+)
+
+
 while True:
     for event in pygame.event.get():
         if event.type == QUIT:
             pygame.quit()
             sys.exit()
+        # handle clicks and other event-time logic per state
+        if state == GAME:
+            if dashboard_button.clicked(event):
+                state = DASHBOARD
+        elif state == DASHBOARD:
+            # process upgrade button clicks while in dashboard
+            if upgrade_speed_button.clicked(event):
+                pass
+            if upgrade_damage_button.clicked(event):
+                pass
+            if game_button.clicked(event):
+                state = GAME
+
     if state == GAME:    
         P1.update()
         enemies.update()
@@ -125,8 +234,7 @@ while True:
         P1.draw(display)
         enemies.draw(display)
 
-        if dashboard_button.clicked(event):
-            state = DASHBOARD
+        # dashboard_button click is handled in the event loop now
 
         # Level timer: increase level every 10 seconds
         now = pygame.time.get_ticks()
@@ -162,7 +270,7 @@ while True:
             sys.exit()
 
         if level % 5 == 1 and level > 1:
-            sys.exit()
+            state = DASHBOARD
 
     elif state == DASHBOARD:
         display.fill((220, 220, 220))
@@ -170,6 +278,10 @@ while True:
         display.blit(title, (screen_width//2 - title.get_width()//2, 150))
 
         display.blit(font.render(f"Upgrade Points: {score}", True, (0,0,0)), (10,10))
+        upgrade_speed_button.draw(display)
+        upgrade_damage_button.draw(display)
+        game_button.draw(display)
+
 
     pygame.display.update()
     FramePerSec.tick(FPS)
