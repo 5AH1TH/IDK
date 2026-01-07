@@ -16,10 +16,10 @@ score = 100
 health = 100
 speed = 10
 reload_speed = 500  # milliseconds between shots
-DAMAGE_PER_HIT = 10
+DAMAGE_PER_HIT = 1
 GAME= "game"
 DASHBOARD= "dashboard"
-state = GAME
+state = DASHBOARD
 
 
 screen_width = 800
@@ -73,6 +73,9 @@ class Enemy(pygame.sprite.Sprite):
     def update(self):
         self.rect.move_ip(0, self.speed)
         if self.rect.top > screen_height:
+            # enemy reached bottom: deduct player health and respawn enemy
+            global health
+            health -= DAMAGE_PER_HIT
             self.rect.center = (random.randint(40, screen_width - 40), 0)
             self.speed = random.randint(5, int(level * 1.5 + 4))
  
@@ -196,7 +199,7 @@ class Reload_Upgrade:
 
 P1 = Player()
 enemies = pygame.sprite.Group()
-spawn_enemies(enemies, level)
+spawn_enemies(enemies, (level + 1) // 2)
 
 dashboard_button = Button_Dashboard(
     x=620,
@@ -305,13 +308,13 @@ while True:
                 enemy.health -= bullet.damage
                 if enemy.health <= 0:
                     enemies.remove(enemy)
+                    score += 50
 
-        # handle collisions: remove colliding enemies and reduce player health
-        collided = pygame.sprite.spritecollide(P1, enemies, dokill=True, collided=player_enemy_collide)
+            # player collisions: do not remove enemies on player contact
+        collided = pygame.sprite.spritecollide(P1, enemies, dokill=False, collided=player_enemy_collide)
         if collided:
-            health -= DAMAGE_PER_HIT * len(collided)
-            if health < 0:
-                sys.exit()
+            # touching enemies no longer costs health
+            pass
         display.fill((0, 0, 0))
         P1.draw(display)
         enemies.draw(display)
@@ -327,8 +330,9 @@ while True:
             # make enemies a bit faster each level
             for e in enemies:
                 e.speed += 1
-            # spawn additional enemies so total equals current level
-            needed = level - len(enemies)
+            # spawn enemies so total equals ceil(level/2)
+            desired = (level + 1) // 2
+            needed = desired - len(enemies)
             if needed > 0:
                 spawn_enemies(enemies, needed)
 
