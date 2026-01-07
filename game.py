@@ -16,10 +16,13 @@ score = 100
 health = 100
 speed = 10
 reload_speed = 500  # milliseconds between shots
-DAMAGE_PER_HIT = 1
+DAMAGE_PER_HIT = 10
 GAME= "game"
 DASHBOARD= "dashboard"
 state = DASHBOARD
+jet = "basic"
+
+#Jet Types: Basic, Machine Gun, Laser, Bomber
 
 
 screen_width = 800
@@ -30,7 +33,10 @@ display.fill((0, 0, 0))
 font = pygame.font.SysFont(None, 36)
 level = 1
 level_start_ticks = pygame.time.get_ticks()
-LEVEL_UP_INTERVAL = 2000  # milliseconds (20 seconds)
+LEVEL_UP_INTERVAL = 5000  # milliseconds (20 seconds)
+# group spawn settings: spawn a new group every 500ms
+GROUP_SPAWN_INTERVAL = 1000*((level/5)+1)
+last_group_spawn = pygame.time.get_ticks()
 
 class Player(pygame.sprite.Sprite):
     def __init__(self):
@@ -59,25 +65,83 @@ class Player(pygame.sprite.Sprite):
         surface.blit(self.image, self.rect)   
 
 class Enemy(pygame.sprite.Sprite):
-    def __init__(self):
-        super().__init__() 
-        img = pygame.image.load("enemy.png").convert_alpha()
-        w, h = img.get_size()
-        self.image = pygame.transform.smoothscale(img, (w // 5, h // 5))
+    def __init__(self, prototype=False, copy_from=None):
+        super().__init__()
+        # load image once per instance or copy from another
+        if copy_from is not None:
+            self.image = copy_from.image.copy()
+        else:
+            img = pygame.image.load("enemy.png").convert_alpha()
+            w, h = img.get_size()
+            self.image = pygame.transform.smoothscale(img, (w // 5, h // 5))
         self.rect = self.image.get_rect()
-        self.rect.center = (random.randint(40, screen_width - 40), 0)
-        self.speed = random.randint(5, int(level * 1.5 + 4))
+        # prototypes stay off-screen and do not participate
+        if prototype:
+            self.rect.topleft = (-1000, -1000)
+            self.speed = 0
+            self.is_prototype = True
+        else:
+            self.rect.center = (random.randint(40, screen_width - 40), 0)
+            self.speed = random.randint(5, int(level * 1.5 + 4))
+            self.is_prototype = False
         # give enemies a health value so bullets can deal damage
-        self.health = 20 + level * 2
+        self.health = 15 + level
+
+    def clone(self):
+        # return a fresh Enemy that copies appearance but is a playable instance
+        return Enemy(copy_from=self)
+
+        # default flag for boss identification
+        # (kept after clone to ensure attribute exists on instances)
  
     def update(self):
         self.rect.move_ip(0, self.speed)
         if self.rect.top > screen_height:
             # enemy reached bottom: deduct player health and respawn enemy
             global health
-            health -= DAMAGE_PER_HIT
+            health -= 5
             self.rect.center = (random.randint(40, screen_width - 40), 0)
             self.speed = random.randint(5, int(level * 1.5 + 4))
+ 
+    def draw(self, surface):
+        surface.blit(self.image, self.rect)
+
+
+class Boss(Enemy):
+    def __init__(self):
+        # create boss using enemy image but scaled larger
+        super().__init__()
+        try:
+            img = pygame.image.load("boss.png").convert_alpha()
+            w, h = img.get_size()
+            self.image = pygame.transform.smoothscale(img, (w // 3, h // 3))
+        except Exception:
+            # fallback: scale existing image up
+            w, h = self.image.get_size()
+            self.image = pygame.transform.smoothscale(self.image, (w * 2, h * 2))
+        self.rect = self.image.get_rect()
+        self.rect.center = (screen_width // 2, 0)
+        self.speed = 2
+        self.health = 500 + level * 50
+        self.is_boss = True
+
+class Boss_Enemy(pygame.sprite.Sprite):
+    def __init__(self):
+        super().__init__()
+        img = pygame.image.load("boss_enemy.png").convert_alpha()
+        w, h = img.get_size()
+        self.image = pygame.transform.smoothscale(img, (w // 3, h // 3))
+        self.rect = self.image.get_rect()
+        self.rect.center = (screen_width // 2, 0)
+        self.speed = 2
+        self.health = 100 + (level * 10)
+ 
+    def update(self):
+        self.rect.move_ip(0, self.speed)
+        if self.rect.top > screen_height:
+            global health
+            health -= 30
+            self.rect.center = (screen_width // 2, 0)
  
     def draw(self, surface):
         surface.blit(self.image, self.rect)
@@ -102,7 +166,11 @@ class Button_Dashboard:
 
 def spawn_enemies(group, count):
     for _ in range(int(count)):
-        group.add(Enemy())
+        # prefer cloning from a non-interactive prototype if available
+        if 'enemy_prototype' in globals() and isinstance(globals().get('enemy_prototype'), Enemy):
+            group.add(enemy_prototype.clone())
+        else:
+            group.add(Enemy())
 
 class Speed_Upgrade:
     def __init__(self, x, y, w, h, text, cost):
@@ -149,9 +217,20 @@ class Damage_Upgrade:
         global DAMAGE_PER_HIT, score
         if event.type == pygame.MOUSEBUTTONDOWN and self.rect.collidepoint(event.pos):
             if score >= self.cost:
-                DAMAGE_PER_HIT += 5
-                score -= self.cost
-                return True
+                if jet == "basic":
+                    DAMAGE_PER_HIT += 2
+                    score -= self.cost
+                    if DAMAGE_PER_HIT > 45:
+                        DAMAGE_PER_HIT = 45
+                        score += self.cost
+                    return True
+                elif jet == "machine gun":
+                    DAMAGE_PER_HIT += 0.5
+                    score -= self.cost
+                    if DAMAGE_PER_HIT > 45:
+                        DAMAGE_PER_HIT = 45
+                        score += self.cost
+                    return True
         return False
     
 class Button_Game:
@@ -192,13 +271,54 @@ class Reload_Upgrade:
         global reload_speed, score
         if event.type == pygame.MOUSEBUTTONDOWN and self.rect.collidepoint(event.pos):
             if score >= self.cost:
-                reload_speed -= 45
+                if jet == "basic":
+                    reload_speed -= 30
+                    score -= self.cost
+                    if reload_speed < 70:
+                        reload_speed = 70
+                        score += self.cost
+                    return True
+                elif jet == "machine gun":
+                    reload_speed -= 45
+                    score -= self.cost
+                    if reload_speed < 30:
+                        reload_speed = 15
+                        score += self.cost
+                    return True
+        return False
+
+class Machine_Gun_Upgrade:
+    def __init__(self, x, y, w, h, text, cost):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.text = text
+        self.cost = cost
+        self.font = pygame.font.SysFont(None, 36)
+
+    def draw(self, surface):
+        pygame.draw.rect(surface, (180, 180, 180), self.rect)
+        pygame.draw.rect(surface, (0, 0, 0), self.rect, 2)
+        txt = font.render(self.text, True, (0, 0, 0))
+        surface.blit(txt, (
+            self.rect.centerx - txt.get_width() // 2,
+            self.rect.centery - txt.get_height() // 2
+        ))
+    
+    def clicked(self, event):
+        global reload_speed, DAMAGE_PER_HIT, score, jet
+        if event.type == pygame.MOUSEBUTTONDOWN and self.rect.collidepoint(event.pos):
+            if score >= self.cost:
+                jet = "machine gun"
+                reload_speed -= 100
+                if reload_speed < 15:
+                    reload_speed = 15
+                DAMAGE_PER_HIT += 5
                 score -= self.cost
-                return True
         return False
 
 P1 = Player()
 enemies = pygame.sprite.Group()
+# keep a non-interactive prototype enemy so the "original" can never be killed
+enemy_prototype = Enemy(prototype=True)
 spawn_enemies(enemies, (level + 1) // 2)
 
 dashboard_button = Button_Dashboard(
@@ -244,9 +364,19 @@ upgrade_reload_button = Reload_Upgrade(
     cost=10
 )
 
+Machine_Gun_Upgrade_button = Machine_Gun_Upgrade(
+    x=425,
+    y=400,
+    w=350,
+    h=50,
+    text="Upgrade to Machine Gun Jet (1000 points)",
+    cost=1000
+)
+
 
 # Shooting / bullets
 last_shot_time = 0
+# holding space will respect `reload_speed` between shots
 
 class Bullet(pygame.sprite.Sprite):
     def __init__(self, pos, damage):
@@ -296,9 +426,18 @@ while True:
                 pass
             if game_button.clicked(event):
                 state = GAME
+            if Machine_Gun_Upgrade_button.clicked(event):
+                pass
 
     if state == GAME:    
         P1.update()
+        # continuous fire while holding space — respect reload_speed
+        pressed = pygame.key.get_pressed()
+        if pressed[K_SPACE]:
+            now_hold = pygame.time.get_ticks()
+            if now_hold - last_shot_time >= reload_speed:
+                bullets.add(Bullet(P1.rect.midtop, DAMAGE_PER_HIT))
+                last_shot_time = now_hold
         enemies.update()
         bullets.update()
         # bullets vs enemies: bullets deal damage, enemies die when health <= 0
@@ -308,7 +447,7 @@ while True:
                 enemy.health -= bullet.damage
                 if enemy.health <= 0:
                     enemies.remove(enemy)
-                    score += 50
+                    score += 15
 
             # player collisions: do not remove enemies on player contact
         collided = pygame.sprite.spritecollide(P1, enemies, dokill=False, collided=player_enemy_collide)
@@ -330,11 +469,12 @@ while True:
             # make enemies a bit faster each level
             for e in enemies:
                 e.speed += 1
-            # spawn enemies so total equals ceil(level/2)
-            desired = (level + 1) // 2
-            needed = desired - len(enemies)
-            if needed > 0:
-                spawn_enemies(enemies, needed)
+            # periodic group spawning handled below (every GROUP_SPAWN_INTERVAL)
+
+        # periodic group spawning: spawn a new group every GROUP_SPAWN_INTERVAL
+        if now - last_group_spawn >= GROUP_SPAWN_INTERVAL:
+            spawn_enemies(enemies, (level + 1) // 2)
+            last_group_spawn = now
 
         # draw level on screen
         level_surf = font.render(f'Level: {level}', True, (255, 255, 255))
@@ -373,6 +513,7 @@ while True:
         upgrade_damage_button.draw(display)
         game_button.draw(display)
         upgrade_reload_button.draw(display)
+        Machine_Gun_Upgrade_button.draw(display)
 
 
     pygame.display.update()
